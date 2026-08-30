@@ -1,0 +1,36 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Audit Log - Evidentia{% endblock %}
+
+{% block content %}
+<h1>Audit Log</h1>
+
+<form method="get" class="filters">
+    <input type="text" name="case_id" placeholder="Filter by Case ID" value="{{ case_id }}">
+    <button type="submit">Filter</button>
+</form>
+
+<table>
+    <thead>
+        <tr>
+            <th>When</th>
+            <th>Action</th>
+            <th>Performed By</th>
+            <th>Document</th>
+            <th>Case</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in entries %}
+        <tr>
+            <td>{{ entry.performedAt }}</td>
+            <td>{{ entry.action }}</td>
+            <td>{{ entry.performedBy }}</td>
+            <td>{{ entry.documentId }}</td>
+            <td><a href="{% url 'dashboard:case_detail' entry.caseId %}">{{ entry.caseId }}</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">No audit entries found.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

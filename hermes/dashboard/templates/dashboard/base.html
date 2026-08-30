@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Evidentia - Reporting Dashboard{% endblock %}</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 0; color: #1a1a1a; }
+        nav { background: #14213d; padding: 12px 24px; }
+        nav a { color: #fff; text-decoration: none; margin-right: 20px; font-size: 14px; }
+        nav a:hover { text-decoration: underline; }
+        .container { padding: 24px; max-width: 960px; margin: 0 auto; }
+        table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+        th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #ddd; font-size: 14px; }
+        th { background: #f4f4f4; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+        .badge-open { background: #fde68a; color: #713f12; }
+        .badge-closed { background: #d1fae5; color: #065f46; }
+        .stub-notice { background: #fef3c7; border: 1px solid #f59e0b; padding: 8px 12px; font-size: 13px; margin-bottom: 16px; }
+        .filters input, .filters select { padding: 6px; margin-right: 8px; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="{% url 'dashboard:index' %}">Case Overview</a>
+        <a href="{% url 'dashboard:document_list' %}">Documents</a>
+        <a href="{% url 'dashboard:audit_log' %}">Audit Log</a>
+    </nav>
+    <div class="container">
+        {% if using_stub %}
+        <div class="stub-notice">
+            Running against stubbed data (USE_STUB_API=true). Switch to the live Spring Boot API once it's stable.
+        </div>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
