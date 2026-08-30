@@ -1,0 +1,58 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ case.caseId }} - Evidentia{% endblock %}
+
+{% block content %}
+<p><a href="{% url 'dashboard:index' %}">&larr; Back to Case Overview</a></p>
+<h1>{{ case.title }}</h1>
+<p><strong>Case ID:</strong> {{ case.caseId }} &nbsp;|&nbsp; <strong>Status:</strong> {{ case.status }}</p>
+
+<h2>Documents</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Document ID</th>
+            <th>Title</th>
+            <th>Type</th>
+            <th>Uploaded By</th>
+            <th>Uploaded At</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for doc in documents %}
+        <tr>
+            <td>{{ doc.documentId }}</td>
+            <td>{{ doc.title }}</td>
+            <td>{{ doc.documentType }}</td>
+            <td>{{ doc.uploadedBy }}</td>
+            <td>{{ doc.uploadedAt }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">No documents for this case.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Audit Trail for This Case</h2>
+<table>
+    <thead>
+        <tr>
+            <th>When</th>
+            <th>Action</th>
+            <th>Performed By</th>
+            <th>Document</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in audit_log %}
+        <tr>
+            <td>{{ entry.performedAt }}</td>
+            <td>{{ entry.action }}</td>
+            <td>{{ entry.performedBy }}</td>
+            <td>{{ entry.documentId }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4">No audit activity recorded for this case.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

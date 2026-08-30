@@ -1,0 +1,47 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Documents - Evidentia{% endblock %}
+
+{% block content %}
+<h1>Documents</h1>
+
+<form method="get" class="filters">
+    <input type="text" name="case_id" placeholder="Case ID" value="{{ filters.case_id }}">
+    <select name="type">
+        <option value="">All Types</option>
+        <option value="FIR" {% if filters.type == "FIR" %}selected{% endif %}>FIR</option>
+        <option value="WITNESS_STATEMENT" {% if filters.type == "WITNESS_STATEMENT" %}selected{% endif %}>Witness Statement</option>
+        <option value="CHARGE_SHEET" {% if filters.type == "CHARGE_SHEET" %}selected{% endif %}>Charge Sheet</option>
+        <option value="FORENSIC_REPORT" {% if filters.type == "FORENSIC_REPORT" %}selected{% endif %}>Forensic Report</option>
+    </select>
+    <input type="date" name="from" value="{{ filters.from }}">
+    <input type="date" name="to" value="{{ filters.to }}">
+    <button type="submit">Filter</button>
+</form>
+
+<table>
+    <thead>
+        <tr>
+            <th>Document ID</th>
+            <th>Case ID</th>
+            <th>Title</th>
+            <th>Type</th>
+            <th>Uploaded By</th>
+            <th>Uploaded At</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for doc in documents %}
+        <tr>
+            <td>{{ doc.documentId }}</td>
+            <td><a href="{% url 'dashboard:case_detail' doc.caseId %}">{{ doc.caseId }}</a></td>
+            <td>{{ doc.title }}</td>
+            <td>{{ doc.documentType }}</td>
+            <td>{{ doc.uploadedBy }}</td>
+            <td>{{ doc.uploadedAt }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">No documents match the current filters.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
