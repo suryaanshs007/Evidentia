@@ -54,11 +54,7 @@ public class DocumentController {
         return documentService.getById(id, requester);
     }
 
-    /**
-     * Metadata only (caseId, documentType), owner or ADMIN, same rule as
-     * view. Re-uploading a new file is not covered, that is versioning,
-     * out of scope for this prototype.
-     */
+   //versioning aint possible for now
     @PutMapping("/{id}")
     public DocumentResponse update(
             @PathVariable Long id,
