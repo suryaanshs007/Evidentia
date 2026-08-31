@@ -10,6 +10,7 @@ import com.sih26190.dms.model.User;
 
 public interface DocumentRecordRepository extends JpaRepository<DocumentRecord, Long> {
 
+
     List<DocumentRecord> findByUploadedBy(User uploadedBy);
 
     List<DocumentRecord> findByCaseId(String caseId);

@@ -2,7 +2,10 @@
 {% block title %}Documents - Evidentia{% endblock %}
 
 {% block content %}
-<h1>Documents</h1>
+<div class="page-header">
+    <h1>Documents</h1>
+    <a href="{% url 'dashboard:upload_document' %}" class="button">Upload Document</a>
+</div>
 
 <form method="get" class="filters">
     <input type="text" name="case_id" placeholder="Case ID" value="{{ filters.case_id }}">
@@ -27,6 +30,7 @@
             <th>Type</th>
             <th>Uploaded By</th>
             <th>Uploaded At</th>
+            <th>Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -38,9 +42,13 @@
             <td>{{ doc.documentType }}</td>
             <td>{{ doc.uploadedBy }}</td>
             <td>{{ doc.uploadedAt }}</td>
+            <td class="actions">
+                <a href="{% url 'dashboard:edit_document' doc.documentId %}">Edit</a>
+                <a href="{% url 'dashboard:delete_document' doc.documentId %}" class="danger-link">Delete</a>
+            </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6">No documents match the current filters.</td></tr>
+        <tr><td colspan="7">No documents match the current filters.</td></tr>
         {% endfor %}
     </tbody>
 </table>

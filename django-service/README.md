@@ -1,4 +1,4 @@
-# DMS Django Dashboard (Designed by Parth)
+# DMS Django Dashboard
 
 Reporting and oversight layer for the Secure Digital Document Management System prototype (SIH26190). Reads from the Spring Boot service, has no database access of its own, and no direct write access to case or document data.
 

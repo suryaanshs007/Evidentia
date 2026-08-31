@@ -14,6 +14,7 @@ import com.sih26190.dms.repository.DocumentRecordRepository;
 import lombok.RequiredArgsConstructor;
 
 // no real case entity in the schema, just docs represented by caseId that can be accessed by the django dash at the rest api's end point, simple stuff for now
+
 @RestController
 @RequestMapping("/api/cases")
 @RequiredArgsConstructor

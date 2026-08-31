@@ -1,0 +1,31 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Upload Document - Evidentia{% endblock %}
+
+{% block content %}
+<h1>Upload Document</h1>
+
+{% if error %}
+<div class="message-error">{{ error }}</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="edit-form">
+    {% csrf_token %}
+    <label>File</label>
+    <input type="file" name="file" required>
+
+    <label>Case ID</label>
+    <input type="text" name="case_id" placeholder="e.g. CASE-001" required>
+
+    <label>Document Type</label>
+    <select name="document_type" required>
+        <option value="">Select type</option>
+        <option value="FIR">FIR</option>
+        <option value="WITNESS_STATEMENT">Witness Statement</option>
+        <option value="CHARGE_SHEET">Charge Sheet</option>
+        <option value="FORENSIC_REPORT">Forensic Report</option>
+        <option value="COURT_FILING">Court Filing</option>
+    </select>
+
+    <button type="submit">Upload</button>
+</form>
+{% endblock %}

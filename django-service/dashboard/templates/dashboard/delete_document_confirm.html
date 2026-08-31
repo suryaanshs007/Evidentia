@@ -1,0 +1,13 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Delete Document - Evidentia{% endblock %}
+
+{% block content %}
+<h1>Delete Document {{ document_id }}?</h1>
+<p>This removes the document's metadata and its file on disk. This cannot be undone.</p>
+
+<form method="post">
+    {% csrf_token %}
+    <button type="submit" class="danger">Yes, delete it</button>
+    <a href="{% url 'dashboard:document_list' %}">Cancel</a>
+</form>
+{% endblock %}

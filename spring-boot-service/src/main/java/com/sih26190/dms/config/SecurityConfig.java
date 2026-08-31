@@ -44,6 +44,12 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    /**
+     * Defines which endpoints require which role. Registration is open so
+     * the first users can be created. Everything under /api/documents
+     * requires authentication, HTTP Basic is used for the prototype
+     * instead of JWT to keep the first pass simple.
+     */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http

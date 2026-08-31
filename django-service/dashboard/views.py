@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect
 from django.http import Http404
+from django.contrib import messages
 
 from . import api_client
 from .decorators import spring_login_required
@@ -172,3 +173,97 @@ def audit_log(request):
         "current_role": request.session.get("sb_role"),
     }
     return render(request, "dashboard/audit_log.html", context)
+
+
+@spring_login_required
+def upload_document(request):
+    """
+    Upload a new document. GET shows the form, POST submits it.
+    Any authenticated user (OFFICER or ADMIN) can upload, matching the
+    Spring Boot side (POST /api/documents just requires authentication,
+    not a specific role).
+    """
+    auth = request.session.get("sb_auth")
+    error = None
+
+    if request.method == "POST":
+        uploaded_file = request.FILES.get("file")
+        case_id = request.POST.get("case_id", "").strip()
+        document_type = request.POST.get("document_type", "").strip()
+
+        if not uploaded_file or not case_id or not document_type:
+            error = "File, case ID, and document type are all required."
+        else:
+            try:
+                api_client.upload_document(uploaded_file, case_id, document_type, auth=auth)
+                messages.success(request, f"Uploaded '{uploaded_file.name}' to case {case_id}.")
+                return redirect("dashboard:document_list")
+            except api_client.SpringBootAPIError:
+                error = "Could not reach the document service. Is Spring Boot running?"
+
+    context = {
+        "error": error,
+        "using_stub": api_client.USE_STUB,
+        "current_username": request.session.get("sb_username"),
+        "current_role": request.session.get("sb_role"),
+    }
+    return render(request, "dashboard/upload_document.html", context)
+
+
+@spring_login_required
+def edit_document(request, document_id):
+    """
+    Edit a document's metadata (case ID, document type). Spring Boot
+    enforces owner-or-ADMIN, a 403 from there is surfaced as a plain
+    error message here rather than a stack trace.
+    """
+    auth = request.session.get("sb_auth")
+    error = None
+
+    if request.method == "POST":
+        case_id = request.POST.get("case_id", "").strip()
+        document_type = request.POST.get("document_type", "").strip()
+        try:
+            api_client.update_document(document_id, case_id=case_id, document_type=document_type, auth=auth)
+            messages.success(request, f"Updated document {document_id}.")
+            return redirect("dashboard:document_list")
+        except api_client.SpringBootPermissionError:
+            error = "You do not have permission to edit this document."
+        except api_client.SpringBootAPIError:
+            error = "Could not reach the document service. Is Spring Boot running?"
+
+    context = {
+        "document_id": document_id,
+        "error": error,
+        "using_stub": api_client.USE_STUB,
+        "current_username": request.session.get("sb_username"),
+        "current_role": request.session.get("sb_role"),
+    }
+    return render(request, "dashboard/edit_document.html", context)
+
+
+@spring_login_required
+def delete_document(request, document_id):
+    """
+    Delete a document. Requires a POST (a GET must never delete
+    anything), a confirmation page is shown first on GET.
+    """
+    auth = request.session.get("sb_auth")
+
+    if request.method == "POST":
+        try:
+            api_client.delete_document(document_id, auth=auth)
+            messages.success(request, f"Deleted document {document_id}.")
+        except api_client.SpringBootPermissionError:
+            messages.error(request, "You do not have permission to delete this document.")
+        except api_client.SpringBootAPIError:
+            messages.error(request, "Could not reach the document service. Is Spring Boot running?")
+        return redirect("dashboard:document_list")
+
+    context = {
+        "document_id": document_id,
+        "using_stub": api_client.USE_STUB,
+        "current_username": request.session.get("sb_username"),
+        "current_role": request.session.get("sb_role"),
+    }
+    return render(request, "dashboard/delete_document_confirm.html", context)

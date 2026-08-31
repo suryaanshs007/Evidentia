@@ -9,11 +9,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.sih26190.dms.dto.AuditLogResponse;
 import com.sih26190.dms.model.AuditLog;
-import com.sih26190.dms.model.DocumentRecord;
 import com.sih26190.dms.repository.AuditLogRepository;
-import com.sih26190.dms.repository.DocumentRecordRepository;
 
 import lombok.RequiredArgsConstructor;
+
 
 @RestController
 @RequestMapping("/api/audit-log")
@@ -21,7 +20,6 @@ import lombok.RequiredArgsConstructor;
 public class AuditLogController {
 
     private final AuditLogRepository auditLogRepository;
-    private final DocumentRecordRepository documentRecordRepository;
 
     @GetMapping
     public List<AuditLogResponse> list(
@@ -31,13 +29,9 @@ public class AuditLogController {
         List<AuditLog> entries;
 
         if (documentId != null) {
-            DocumentRecord document = documentRecordRepository.findById(documentId)
-                    .orElseThrow(() -> new RuntimeException("Document not found"));
-            entries = auditLogRepository.findByDocument(document);
+            entries = auditLogRepository.findByDocumentId(documentId);
         } else if (caseId != null) {
-            entries = documentRecordRepository.findByCaseId(caseId).stream()
-                    .flatMap(doc -> auditLogRepository.findByDocument(doc).stream())
-                    .toList();
+            entries = auditLogRepository.findByCaseId(caseId);
         } else {
             entries = auditLogRepository.findAll();
         }
@@ -51,8 +45,8 @@ public class AuditLogController {
     private AuditLogResponse toResponse(AuditLog log) {
         return new AuditLogResponse(
                 log.getId(),
-                log.getDocument().getId(),
-                log.getDocument().getCaseId(),
+                log.getDocumentId(),
+                log.getCaseId(),
                 log.getAction(),
                 log.getUser().getUsername(),
                 log.getTimestamp()

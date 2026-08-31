@@ -10,5 +10,8 @@ urlpatterns = [
     path("logout/", views.logout_view, name="logout"),
     path("cases/<str:case_id>/", views.case_detail, name="case_detail"),
     path("documents/", views.document_list, name="document_list"),
+    path("documents/upload/", views.upload_document, name="upload_document"),
+    path("documents/<str:document_id>/edit/", views.edit_document, name="edit_document"),
+    path("documents/<str:document_id>/delete/", views.delete_document, name="delete_document"),
     path("audit-log/", views.audit_log, name="audit_log"),
 ]

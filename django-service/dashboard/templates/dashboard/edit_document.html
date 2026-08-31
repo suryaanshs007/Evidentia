@@ -1,0 +1,28 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Edit Document - Evidentia{% endblock %}
+
+{% block content %}
+<h1>Edit Document {{ document_id }}</h1>
+
+{% if error %}
+<div class="message-error">{{ error }}</div>
+{% endif %}
+
+<form method="post" class="edit-form">
+    {% csrf_token %}
+    <label>Case ID</label>
+    <input type="text" name="case_id" placeholder="Leave blank to keep current value">
+
+    <label>Document Type</label>
+    <select name="document_type">
+        <option value="">Leave unchanged</option>
+        <option value="FIR">FIR</option>
+        <option value="WITNESS_STATEMENT">Witness Statement</option>
+        <option value="CHARGE_SHEET">Charge Sheet</option>
+        <option value="FORENSIC_REPORT">Forensic Report</option>
+        <option value="COURT_FILING">Court Filing</option>
+    </select>
+
+    <button type="submit">Save changes</button>
+</form>
+{% endblock %}

@@ -20,7 +20,8 @@ public class AuditService {
     public void log(User user, DocumentRecord document, String action) {
         AuditLog entry = new AuditLog();
         entry.setUser(user);
-        entry.setDocument(document);
+        entry.setDocumentId(document.getId());
+        entry.setCaseId(document.getCaseId());
         entry.setAction(action);
         entry.setTimestamp(LocalDateTime.now());
         auditLogRepository.save(entry);

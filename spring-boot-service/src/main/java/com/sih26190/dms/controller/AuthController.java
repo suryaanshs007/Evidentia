@@ -19,7 +19,7 @@ import com.sih26190.dms.repository.UserRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
-// only http auth is being used for now (ik that sucks, we should use JWT instead) but for the prototype this is fine
+
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor

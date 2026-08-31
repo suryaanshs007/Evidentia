@@ -54,6 +54,12 @@ class SpringBootAuthError(Exception):
     pass
 
 
+class SpringBootPermissionError(Exception):
+    """Raised when Spring Boot returns 403, the logged-in user isn't the
+    document's owner and isn't an ADMIN."""
+    pass
+
+
 # ---------------------------------------------------------------------------
 # Stub data
 # ---------------------------------------------------------------------------
@@ -123,19 +129,79 @@ def _get(path, params=None, auth=None):
     """Perform a real GET call against the Spring Boot service.
 
     auth is the (username, password) tuple for the logged-in dashboard
-    user, stored in their Django session by login_view. Falls back to
-    the hardcoded admin only if no session auth was supplied.
+    user, stored in their Django session by login_view. Django's session
+    backend serializes to JSON, so a tuple comes back out as a list,
+    which the requests library will not accept as Basic Auth (it checks
+    specifically for a tuple), hence the explicit tuple() conversion
+    below.
     """
     url = f"{BASE_URL}{path}"
+    resolved_auth = tuple(auth) if auth else _FALLBACK_AUTH
     try:
         response = requests.get(
             url,
             params=params,
             timeout=REQUEST_TIMEOUT_SECONDS,
-            auth = tuple(auth) if auth else _FALLBACK_AUTH,
+            auth=resolved_auth,
         )
         response.raise_for_status()
         return response.json()
+    except requests.RequestException as exc:
+        raise SpringBootAPIError(f"Failed calling {url}: {exc}") from exc
+
+
+def _post_multipart(path, files, data, auth=None):
+    """POST a multipart/form-data request (file upload)."""
+    url = f"{BASE_URL}{path}"
+    resolved_auth = tuple(auth) if auth else _FALLBACK_AUTH
+    try:
+        response = requests.post(
+            url,
+            files=files,
+            data=data,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            auth=resolved_auth,
+        )
+        if response.status_code == 403:
+            raise SpringBootPermissionError("Not authorized to perform this action")
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise SpringBootAPIError(f"Failed calling {url}: {exc}") from exc
+
+
+def _put_json(path, json_body, auth=None):
+    """PUT a JSON body against the Spring Boot service."""
+    url = f"{BASE_URL}{path}"
+    resolved_auth = tuple(auth) if auth else _FALLBACK_AUTH
+    try:
+        response = requests.put(
+            url,
+            json=json_body,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            auth=resolved_auth,
+        )
+        if response.status_code == 403:
+            raise SpringBootPermissionError("Not authorized to perform this action")
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise SpringBootAPIError(f"Failed calling {url}: {exc}") from exc
+
+
+def _delete(path, auth=None):
+    """DELETE against the Spring Boot service. No response body expected."""
+    url = f"{BASE_URL}{path}"
+    resolved_auth = tuple(auth) if auth else _FALLBACK_AUTH
+    try:
+        response = requests.delete(
+            url,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            auth=resolved_auth,
+        )
+        if response.status_code == 403:
+            raise SpringBootPermissionError("Not authorized to perform this action")
+        response.raise_for_status()
     except requests.RequestException as exc:
         raise SpringBootAPIError(f"Failed calling {url}: {exc}") from exc
 
@@ -230,3 +296,59 @@ def get_audit_log(case_id=None, document_id=None, auth=None):
         return _filter_audit_log(case_id, document_id)
     params = {k: v for k, v in {"caseId": case_id, "documentId": document_id}.items() if v}
     return _get("/api/audit-log", params=params, auth=auth)
+
+
+def upload_document(file, case_id, document_type, auth=None):
+    """
+    Upload a new document. In stub mode, appends an in-memory fake
+    record so the flow is demoable without Spring Boot, this is not
+    persisted anywhere and resets on server restart.
+    """
+    if USE_STUB:
+        new_id = f"DOC-{1000 + len(_STUB_DOCUMENTS) + 1}"
+        record = {
+            "documentId": new_id,
+            "caseId": case_id,
+            "documentType": document_type,
+            "title": getattr(file, "name", "uploaded-file"),
+            "uploadedBy": "stub-user",
+            "uploadedAt": datetime.now().isoformat(),
+        }
+        _STUB_DOCUMENTS.append(record)
+        return record
+
+    return _post_multipart(
+        "/api/documents",
+        files={"file": (file.name, file.read(), file.content_type)},
+        data={"caseId": case_id, "documentType": document_type},
+        auth=auth,
+    )
+
+
+def update_document(document_id, case_id=None, document_type=None, auth=None):
+    """
+    Update a document's metadata (caseId and/or documentType). In stub
+    mode, mutates the in-memory record.
+    """
+    if USE_STUB:
+        for d in _STUB_DOCUMENTS:
+            if d["documentId"] == document_id:
+                if case_id:
+                    d["caseId"] = case_id
+                if document_type:
+                    d["documentType"] = document_type
+                return d
+        raise SpringBootAPIError(f"No stub document with id {document_id}")
+
+    body = {k: v for k, v in {"caseId": case_id, "documentType": document_type}.items() if v}
+    return _put_json(f"/api/documents/{document_id}", body, auth=auth)
+
+
+def delete_document(document_id, auth=None):
+    """Delete a document. In stub mode, removes it from the in-memory list."""
+    if USE_STUB:
+        global _STUB_DOCUMENTS
+        _STUB_DOCUMENTS = [d for d in _STUB_DOCUMENTS if d["documentId"] != document_id]
+        return
+
+    _delete(f"/api/documents/{document_id}", auth=auth)

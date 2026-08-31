@@ -30,10 +30,17 @@ public class AuditLog {
     @JoinColumn(name = "user_id")
     private User user;
 
-    @ManyToOne
-    @JoinColumn(name = "document_id")
-    private DocumentRecord document;
+    // documentId and caseId are stored as plain values captured at the
+    // time of the action, not a JPA relationship to DocumentRecord.
+    // An audit log must survive deletion of the thing it is auditing,
+    // a foreign key here would either block deleting a document or
+    // silently orphan/cascade-delete its own history, both wrong for
+    // an audit trail.
+    private Long documentId;
 
+    private String caseId;
+
+    // e.g. UPLOAD, VIEW, UPDATE, DELETE
     private String action;
 
     private LocalDateTime timestamp;
