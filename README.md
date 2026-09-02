@@ -239,17 +239,13 @@ curl -u admin1:adminpass http://localhost:8080/api/audit-log
 curl -u officer1:officerpass http://localhost:8080/api/documents/1/verify
 ```
 
-### Update and Delete
 
-**Not implemented yet.** There is no `PUT`, `PATCH`, or `DELETE` endpoint anywhere in the current API, documents can be created and read, but not edited or removed once uploaded. This is an honest gap, not an oversight to gloss over, adding these (with corresponding audit log entries for `UPDATE`/`DELETE` actions) is on the task list below.
 
 ## Known gaps, honestly listed
 
 - No real `Case` entity, `title` and `status` on case summaries are placeholders
 - Blockchain integration currently uses a local Ganache network for the prototype; a distributed multi-validator deployment is not implemented
 - No AI document analysis layer yet (deferred to after the presentation round)
-- No upload form in the Django dashboard, uploads are tested via the Spring Boot API directly
-- No Update or Delete endpoints for documents, only Create and Read exist
 - The Django session stores the raw password for reuse as Basic Auth on later calls, acceptable for a localhost prototype, not something to carry into a real deployment
 - `POST /api/auth/login`'s "token" is a Basic Auth string, not a real bearer token, a deliberate simplification given the timeline
 
