@@ -40,18 +40,23 @@ Innovation and uniqueness:
 - The audit log is a first class part of the data model, not an afterthought bolted on later
 - The architecture separates the system of record from the reporting and oversight layer, so investigative staff and oversight/admin staff interact with purpose built interfaces instead of one generic dashboard
 
-## Planned: local Ethereum integration for tamper evidence (possible future inclusion)
+## Tamper detection using local Ethereum
 
-The official theme includes Blockchain, and the current prototype has no blockchain involvement yet, this is the next planned layer, not yet built.
+The prototype now includes a tamper-evidence layer using **Ganache**, a local Ethereum virtual network, and a small **Solidity** smart contract. The blockchain stores a trusted hash of each uploaded document so the system can later detect whether the stored file has been altered.
 
-The plan, inspired by the B-CoC (Blockchain-based Chain of Custody) research architecture (Bonomi et al.), scaled down for a single-department deployment instead of a multi-institution validator network:
+How it works:
 
-- Run **Ganache**, a local single-node Ethereum simulator, no real network or gas cost involved
-- Write a small **Solidity** smart contract that stores a document's hash, case ID, and timestamp on-chain, with a `getDocumentRecord` view function to read it back
-- Use **Web3j** from the Spring Boot service to deploy the contract and call it whenever a document is uploaded
-- Add a verification endpoint that recomputes a document's hash on demand and compares it against the on-chain value, so tampering is detectable, not just logged after the fact
+- When a document is uploaded, Spring Boot reads the file bytes and computes a **SHA-3 hash**
+- The document ID, hash, case ID, uploader address, and timestamp are stored by the `DocumentRegistry` smart contract on Ganache
+- The document itself remains in the local document store and is not placed on the blockchain
+- `GET /api/documents/{id}/verify` reads the current file, recomputes its SHA-3 hash, retrieves the original hash from the smart contract, and compares the two
+- If the hashes match, the document is reported as intact; if they differ, the document is reported as potentially altered since upload
 
-This is a deliberate simplification of full blockchain (single node, no consensus protocol) chosen because a distributed multi-validator network is unrealistic to deploy or demo within the prototype's timeline, and because this problem statement is scoped to a single department (NCRB Women Safety Division) rather than the multi-institution setting the original research assumes.
+The Solidity contract exposes `storeDocumentHash` for anchoring a document hash and `getDocumentRecord` for retrieving the stored record. Spring Boot interacts with the contract through **Web3j**.
+
+Ganache is used as a local single-node Ethereum environment for the prototype. It provides a controlled blockchain environment for development and demonstration without requiring a public Ethereum network. This is intentionally a tamper-evidence mechanism rather than a claim that the overall system is tamper-proof.
+
+This implementation is a deliberate simplification of a distributed blockchain deployment. A single local Ethereum node is sufficient for demonstrating hash anchoring and verification within the scope and timeline of the prototype.
 
 ## How the two services talk to each other
 
@@ -72,6 +77,7 @@ Django's `api_client.py` was originally built against a stubbed version of this 
 | `GET /api/cases` | List case summaries (derived, not a real entity) | ADMIN |
 | `GET /api/cases/{caseId}` | Single case detail | ADMIN |
 | `GET /api/audit-log` | Full or filtered audit trail | ADMIN |
+| `GET /api/documents/{id}/verify` | Verify current file against the on-chain hash | Authenticated, owner or ADMIN |
 
 Field names in every response are chosen to match what `dashboard/api_client.py` and the Django templates already expect (`documentId`, `title`, `uploadedBy`, `auditId`, `performedBy`, `performedAt`, etc), not Spring Boot's internal naming, so no translation layer is needed on the Django side.
 
@@ -79,9 +85,45 @@ Field names in every response are chosen to match what `dashboard/api_client.py`
 
 ### 1. Spring Boot service (system of record)
 
-**Requirements:** Java 17, Maven, PostgreSQL running locally.
+**Requirements:** Java 17+, Maven, PostgreSQL running locally, Node.js/npm, and Ganache.
 
-1. Create the database:
+1. Install and start **Ganache**:
+   - Install Ganache locally and start a local Ethereum workspace/network
+   - Keep the RPC endpoint and funded account details available, as Spring Boot will use them to deploy and call the smart contract
+
+2. Install the Solidity compiler used by the project:
+```bash
+   npm install solc@0.8.19
+```
+   This creates the local Solidity toolchain used to compile `DocumentRegistry.sol`.
+
+3. Compile the smart contract from the project root:
+```bash
+   npx solcjs --bin --abi \
+     -o src/main/resources/solidity.DocumentRegistry \
+     contracts/DocumentRegistry.sol
+```
+   The generated ABI and bytecode files should be available as:
+```text
+   src/main/resources/solidity.DocumentRegistry/DocumentRegistry.abi
+   src/main/resources/solidity.DocumentRegistry/DocumentRegistry.bin
+```
+
+4. Configure `application.properties`:
+   - Set the PostgreSQL username and password
+   - Set the Ganache RPC URL
+   - Set the **private key of the funded Ganache account** used by Web3j
+   - Leave `blockchain.contract-address` blank for the first run if the application should deploy the contract automatically
+
+5. Start Spring Boot once with the contract address blank. The application deploys `DocumentRegistry` to Ganache and prints the deployed contract address in the console.
+
+6. Copy the deployed contract address into:
+```properties
+   blockchain.contract-address=0x...
+```
+   Then restart Spring Boot so subsequent uploads and verification calls use the deployed contract.
+
+7. Create the database:
 ```bash
    createdb dms_db
 ```
@@ -89,19 +131,26 @@ Field names in every response are chosen to match what `dashboard/api_client.py`
 ```sql
    CREATE DATABASE dms_db;
 ```
-2. Copy the properties template and fill in your real local credentials:
+8. Copy the properties template and fill in your real local credentials:
 ```bash
    cd spring-boot-service/src/main/resources
    cp application.properties.example application.properties
 ```
    Then edit `application.properties` and set `spring.datasource.username` / `spring.datasource.password` to your local Postgres user.
-3. Build and run:
+9. Build and run:
 ```bash
    cd spring-boot-service
    mvn clean install
    mvn spring-boot:run
 ```
    Runs on `http://localhost:8080`.
+
+10. Verify the blockchain-backed tamper detection:
+   - Upload a document through `POST /api/documents`
+   - Note the returned `documentId`
+   - Verify it through `GET /api/documents/{id}/verify`
+   - A matching file should return the successful integrity message
+   - To demonstrate tampering, modify the stored file after upload and run the same verification endpoint again. The recomputed hash will differ from the on-chain hash and the response will report that the file may have been altered
 
 ### 2. Django dashboard (reporting/oversight layer)
 
@@ -145,7 +194,7 @@ Then log in through the dashboard at `http://localhost:8000` with either account
 
 ## CRUD operations via curl
 
-Reading data (cases, documents, audit log) is easiest through the dashboard once you're logged in, that's what it's for. The commands below cover Create, since that's what currently exists in the API.
+Reading data (cases, documents, audit log) is easiest through the dashboard once you're logged in, that's what it's for. The commands below cover Create and Read, plus document integrity verification.
 
 ### Create
 
@@ -177,6 +226,9 @@ curl -u officer1:officerpass http://localhost:8080/api/documents/1
 # Cases and audit log require an ADMIN account
 curl -u admin1:adminpass http://localhost:8080/api/cases
 curl -u admin1:adminpass http://localhost:8080/api/audit-log
+
+# Verify document integrity against the hash stored on Ganache
+curl -u officer1:officerpass http://localhost:8080/api/documents/1/verify
 ```
 
 ### Update and Delete
@@ -186,7 +238,7 @@ curl -u admin1:adminpass http://localhost:8080/api/audit-log
 ## Known gaps, honestly listed
 
 - No real `Case` entity, `title` and `status` on case summaries are placeholders
-- No blockchain/hash-chain integrity layer yet (planned, see above, not built)
+- Blockchain integration currently uses a local Ganache network for the prototype; a distributed multi-validator deployment is not implemented
 - No AI document analysis layer yet (deferred to after the presentation round)
 - No upload form in the Django dashboard, uploads are tested via the Spring Boot API directly
 - No Update or Delete endpoints for documents, only Create and Read exist
@@ -199,7 +251,7 @@ curl -u admin1:adminpass http://localhost:8080/api/audit-log
 - [x] Core entities, RBAC, document upload/retrieval, audit logging
 - [x] `/api/cases`, `/api/audit-log`, `/api/auth/login` to match the Django contract
 - [ ] Update and Delete endpoints for documents, with matching audit log entries
-- [ ] Hash-chain or on-chain (Ganache/Web3j) tamper-evidence layer
+- [x] On-chain (Ganache/Web3j) tamper-evidence and document hash verification layer
 - [ ] Real `Case` entity if time allows
 
 ### Django service
@@ -212,5 +264,3 @@ curl -u admin1:adminpass http://localhost:8080/api/audit-log
 ### Later, after the presentation round
 - [ ] LLM-based document analysis (summarization, detail extraction)
 - [ ] Document version history
-
-

@@ -45,3 +45,5 @@ spring-boot-service/src/main/resources/application.properties
 .idea/
 .vscode/
 .DS_Store
+
+./spring-boot-service/node_modules
