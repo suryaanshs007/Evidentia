@@ -1,6 +1,12 @@
 # Evidentia: Secure Digital Document Management System (26190)
 
-(Prototype)
+(Prototype) 
+
+
+<img src="/images/adminlandingpage.png" alt="an image of the admin page>
+
+
+
 
 Two services, run independently: 
 
