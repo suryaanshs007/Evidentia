@@ -3,7 +3,7 @@
 (Prototype) 
 
 
-<img src="/Users/suryaanshs/repos/Evidentia/images/adminlandingpage.png" alt="Image of the admin page">
+<img src="/images/adminlandingpage.png" alt="Image of the admin page">
 
 ### The image displays an admin level view of Evidentia's landing page, as simple as it may look, there's a lot to it, read through this README to know more
 
