@@ -79,5 +79,10 @@ public class DocumentController {
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Authenticated user not found: " + username));
     }
+    @GetMapping("/{id}/verify")
+    public com.sih26190.dms.dto.VerifyResponse verify(@PathVariable Long id, Authentication authentication) {
+        User requester = currentUser(authentication);
+        return documentService.verify(id, requester);
+    }
 
 }

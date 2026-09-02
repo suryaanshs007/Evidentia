@@ -14,12 +14,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.sih26190.dms.blockchain.BlockchainService;
 import com.sih26190.dms.dto.DocumentResponse;
+import com.sih26190.dms.dto.UpdateDocumentRequest;
+import com.sih26190.dms.dto.VerifyResponse;
 import com.sih26190.dms.model.DocumentRecord;
 import com.sih26190.dms.model.Role;
 import com.sih26190.dms.model.User;
 import com.sih26190.dms.repository.DocumentRecordRepository;
-import com.sih26190.dms.dto.UpdateDocumentRequest;
 
 import lombok.RequiredArgsConstructor;
 
@@ -29,20 +31,31 @@ public class DocumentService {
 
     private final DocumentRecordRepository documentRecordRepository;
     private final AuditService auditService;
+    private final BlockchainService blockchainService;
 
     @Value("${dms.storage.location}")
     private String storageLocation;
 
-
+    /**
+     * Saves the file to disk, saves the metadata row, writes an audit
+     * log entry, and anchors the file's hash on-chain via
+     * BlockchainService, all treated as one unit: if the blockchain
+     * call fails, the whole upload fails, rather than silently leaving
+     * a document with no tamper-evidence record. Given the transaction
+     * is @Transactional, a thrown exception here rolls back the DB
+     * writes too.
+     */
     @Transactional
     public DocumentResponse upload(MultipartFile file, String caseId, String documentType, User uploader) {
         try {
+            byte[] fileBytes = file.getBytes();
+
             Path directory = Paths.get(storageLocation);
             Files.createDirectories(directory);
 
             String storedFileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
             Path destination = directory.resolve(storedFileName);
-            file.transferTo(destination);
+            Files.write(destination, fileBytes);
 
             DocumentRecord document = new DocumentRecord();
             document.setCaseId(caseId);
@@ -55,6 +68,12 @@ public class DocumentService {
             DocumentRecord saved = documentRecordRepository.save(document);
 
             auditService.log(uploader, saved, "UPLOAD");
+
+            try {
+                blockchainService.storeDocumentHash(saved.getId(), fileBytes, caseId);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to anchor document hash on-chain, upload rolled back", e);
+            }
 
             return toResponse(saved);
         } catch (IOException e) {
@@ -82,16 +101,47 @@ public class DocumentService {
         DocumentRecord document = documentRecordRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Document not found"));
 
-        boolean isOwner = document.getUploadedBy().getId().equals(requester.getId());
-        boolean isAdmin = requester.getRole() == Role.ADMIN;
-
-        if (!isOwner && !isAdmin) {
-            throw new AccessDeniedException("You do not have access to this document");
-        }
+        requireOwnerOrAdmin(document, requester);
 
         auditService.log(requester, document, "VIEW");
 
         return toResponse(document);
+    }
+
+    /**
+     * Recomputes the on-disk file's hash right now and compares it
+     * against what was anchored on-chain at upload time. A mismatch
+     * means the file was altered outside the system after upload.
+     * Logs a VERIFY action either way.
+     */
+    @Transactional
+    public VerifyResponse verify(Long id, User requester) {
+        DocumentRecord document = documentRecordRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Document not found"));
+
+        requireOwnerOrAdmin(document, requester);
+
+        byte[] currentBytes;
+        try {
+            currentBytes = Files.readAllBytes(Paths.get(document.getFilePath()));
+        } catch (IOException e) {
+            throw new RuntimeException("Could not read file from disk to verify it", e);
+        }
+
+        boolean matches;
+        try {
+            matches = blockchainService.verifyDocumentHash(id, currentBytes);
+        } catch (Exception e) {
+            throw new RuntimeException("Could not reach the blockchain to verify this document", e);
+        }
+
+        auditService.log(requester, document, "VERIFY");
+
+        String message = matches
+                ? "File matches the hash recorded on-chain at upload time."
+                : "File does NOT match the on-chain record, it may have been altered since upload.";
+
+        return new VerifyResponse(id, !matches, message);
     }
 
     /**
@@ -123,6 +173,10 @@ public class DocumentService {
      * entry is written first, capturing the document's id and caseId as
      * plain values (see AuditLog), so the audit trail survives even
      * though the DocumentRecord row itself is removed right after.
+     * The on-chain hash record is intentionally left in place, since
+     * the blockchain layer is append-only by design, this is itself a
+     * useful property: even a deleted document's integrity history is
+     * still verifiable if the file is recovered from a backup later.
      */
     @Transactional
     public void delete(Long id, User requester) {
