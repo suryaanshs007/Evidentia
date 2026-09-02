@@ -14,4 +14,5 @@ urlpatterns = [
     path("documents/<str:document_id>/edit/", views.edit_document, name="edit_document"),
     path("documents/<str:document_id>/delete/", views.delete_document, name="delete_document"),
     path("audit-log/", views.audit_log, name="audit_log"),
+    path("documents/<str:document_id>/verify/", views.verify_document, name="verify_document"),
 ]

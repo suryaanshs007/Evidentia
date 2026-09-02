@@ -44,6 +44,7 @@
             <td>{{ doc.uploadedAt }}</td>
             <td class="actions">
                 <a href="{% url 'dashboard:edit_document' doc.documentId %}">Edit</a>
+                <a href="{% url 'dashboard:verify_document' doc.documentId %}">Verify</a>
                 <a href="{% url 'dashboard:delete_document' doc.documentId %}" class="danger-link">Delete</a>
             </td>
         </tr>

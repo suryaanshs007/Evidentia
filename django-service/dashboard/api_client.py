@@ -343,6 +343,17 @@ def update_document(document_id, case_id=None, document_type=None, auth=None):
     body = {k: v for k, v in {"caseId": case_id, "documentType": document_type}.items() if v}
     return _put_json(f"/api/documents/{document_id}", body, auth=auth)
 
+def verify_document(document_id, auth=None):
+    """
+    Ask Spring Boot to recompute the file's hash and compare it against
+    the on-chain record. In stub mode, always reports a match, there is
+    no real blockchain behind stub data.
+    """
+    if USE_STUB:
+        return {"documentId": document_id, "tampered": False, "message": "Stub mode: no real verification performed."}
+
+    return _get(f"/api/documents/{document_id}/verify", auth=auth)
+
 
 def delete_document(document_id, auth=None):
     """Delete a document. In stub mode, removes it from the in-memory list."""

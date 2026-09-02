@@ -267,3 +267,25 @@ def delete_document(request, document_id):
         "current_role": request.session.get("sb_role"),
     }
     return render(request, "dashboard/delete_document_confirm.html", context)
+
+@spring_login_required
+def verify_document(request, document_id):
+    """
+    Triggers Spring Boot's tamper check for a document and shows the
+    result as a message. This is a read-only check (GET, not a mutation),
+    unlike delete it doesn't need a confirm-first page.
+    """
+    auth = request.session.get("sb_auth")
+
+    try:
+        result = api_client.verify_document(document_id, auth=auth)
+        if result.get("tampered"):
+            messages.error(request, f"Document {document_id}: {result.get('message')}")
+        else:
+            messages.success(request, f"Document {document_id}: {result.get('message')}")
+    except api_client.SpringBootPermissionError:
+        messages.error(request, "You do not have permission to verify this document.")
+    except api_client.SpringBootAPIError:
+        messages.error(request, "Could not reach the document service. Is Spring Boot running?")
+
+    return redirect("dashboard:document_list")
