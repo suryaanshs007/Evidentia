@@ -41,6 +41,10 @@ public class DocumentController {
         User uploader = currentUser(authentication);
         return documentService.upload(file, caseId, documentType, uploader);
     }
+    @PostMapping("/candidate-hash")
+    public void recordCandidateHash(@RequestBody com.sih26190.dms.dto.CandidateHashRequest request) {
+        documentService.recordCandidateHash(request.getFilename(), request.getSha256Hash());
+    }
 
     @GetMapping
     public List<DocumentResponse> list(Authentication authentication) {

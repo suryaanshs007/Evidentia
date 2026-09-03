@@ -50,11 +50,12 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
-                .requestMatchers("/api/cases/**", "/api/audit-log/**").hasRole("ADMIN")
-                .requestMatchers("/api/documents/**").authenticated()
-                .anyRequest().authenticated()
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/documents/candidate-hash").permitAll()
+                        .requestMatchers("/api/cases/**", "/api/audit-log/**").hasRole("ADMIN")
+                        .requestMatchers("/api/documents/**").authenticated()
+                        .anyRequest().authenticated()
+
             )
             .httpBasic(basic -> {});
 

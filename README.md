@@ -1,6 +1,6 @@
 # Evidentia: Secure Digital Document Management System (26190)
 
-(Prototype) 
+(Prototype)
 
 
 <img src="/images/adminlandingpage.png" alt="Image of the admin page">
@@ -10,7 +10,7 @@ The image displays an admin level view of Evidentia's landing page, as simple as
 
 
 
-Two services, run independently: 
+Two services, run independently:
 
 See each service's own README for setup and details. This file covers the problem being solved, how the two services fit together, and how to build and run the whole thing.
 
@@ -47,6 +47,7 @@ Innovation and uniqueness:
 
 - The audit log is a first class part of the data model, not an afterthought bolted on later
 - The architecture separates the system of record from the reporting and oversight layer, so investigative staff and oversight/admin staff interact with purpose built interfaces instead of one generic dashboard
+- Tamper detection covers two separate time windows rather than one: a local file watcher independently fingerprints a document the moment it exists on the officer's machine, before upload, while the on-chain hash covers everything from upload onward. Between them, the system can distinguish "altered before it ever reached us" from "altered after we stored it", most chain-of-custody implementations only cover the second case
 
 ## Tamper detection using local Ethereum
 
@@ -66,9 +67,29 @@ Ganache is used as a local single-node Ethereum environment for the prototype. I
 
 This implementation is a deliberate simplification of a distributed blockchain deployment. A single local Ethereum node is sufficient for demonstrating hash anchoring and verification within the scope and timeline of the prototype.
 
+**Important scope note:** the on-chain hash is computed from whatever bytes exist in the file at the moment of upload. `verify()` only detects changes made to the stored file *after* that point, it cannot detect a document that was already altered before it was uploaded. That earlier window is what the local watcher below is for.
+
+## Pre-upload tamper detection (local file watcher)
+
+The on-chain layer above only protects a document from the moment it is uploaded onward. It has no way to know whether the file was already altered before the officer clicked upload, since the hash it anchors is computed at upload time, whatever content exists then is treated as the trusted original. A prototype standalone watcher script closes that earlier gap.
+
+How it works:
+
+- A small script (`tools/local-watcher/watch.py`) watches a designated local intake folder using OS-level filesystem notifications, not polling
+- The instant a file appears or changes in that folder, the watcher computes its SHA-256 hash and immediately reports `{filename, hash, timestamp}` to Spring Boot via `POST /api/documents/candidate-hash`, before any upload has happened
+- This report leaves the officer's machine immediately: once sent, killing the watcher or editing the file afterward cannot retroactively change what was already recorded server-side
+- When that same file is later uploaded, `DocumentService.upload()` looks up the **earliest** reported hash for a file with that name and compares it against the uploaded bytes
+- A mismatch means the file was altered locally between first being observed and being uploaded. This is recorded as a `PRE_UPLOAD_TAMPER_DETECTED` audit log entry, and the upload response includes a `preUploadWarning` message, surfaced immediately as a warning banner in the dashboard rather than a generic success message
+
+This is a genuinely separate mechanism from the blockchain layer, no Ethereum, no smart contract, purely Spring Boot and Postgres. The two together cover a document's full lifecycle: creation, upload, and everything afterward, rather than leaving a gap between creation and upload uncovered.
+
+**Honest limitations:**
+- Only files that pass through the watched folder get a candidate record. A file uploaded from anywhere else has no earlier fingerprint to compare against, `preUploadWarning` stays `null` in that case, meaning "no claim either way," not "verified clean"
+- `POST /api/documents/candidate-hash` is currently open with no authentication, acceptable for a local single-machine demo, not something to expose as-is beyond the prototype
+
 ## How the two services talk to each other
 
-Communication is one directional. The Django dashboard calls the Spring Boot REST API over HTTP. Django has no direct database access to Spring Boot's data, and Spring Boot has no dependency on Django at all, it can run and be fully tested on its own. 
+Communication is one directional. The Django dashboard calls the Spring Boot REST API over HTTP. Django has no direct database access to Spring Boot's data, and Spring Boot has no dependency on Django at all, it can run and be fully tested on its own.
 
 
 ## Contract between the two services
@@ -82,10 +103,13 @@ Django's `api_client.py` was originally built against a stubbed version of this 
 | `GET /api/documents` | List documents (role filtered) | Authenticated |
 | `POST /api/documents` | Upload a document | Authenticated |
 | `GET /api/documents/{id}` | View one document | Authenticated, owner or ADMIN |
+| `PUT /api/documents/{id}` | Update a document's metadata (case ID, document type) | Authenticated, owner or ADMIN |
+| `DELETE /api/documents/{id}` | Delete a document and its file | Authenticated, owner or ADMIN |
 | `GET /api/cases` | List case summaries (derived, not a real entity) | ADMIN |
 | `GET /api/cases/{caseId}` | Single case detail | ADMIN |
 | `GET /api/audit-log` | Full or filtered audit trail | ADMIN |
 | `GET /api/documents/{id}/verify` | Verify current file against the on-chain hash | Authenticated, owner or ADMIN |
+| `POST /api/documents/candidate-hash` | Report a pre-upload file hash from the local watcher | Open |
 
 Field names in every response are chosen to match what `dashboard/api_client.py` and the Django templates already expect (`documentId`, `title`, `uploadedBy`, `auditId`, `performedBy`, `performedAt`, etc), not Spring Boot's internal naming, so no translation layer is needed on the Django side.
 
@@ -103,7 +127,7 @@ Field names in every response are chosen to match what `dashboard/api_client.py`
 ```bash
    npm install solc@0.8.19
 ```
-   This creates the local Solidity toolchain used to compile `DocumentRegistry.sol`.
+This creates the local Solidity toolchain used to compile `DocumentRegistry.sol`.
 
 3. Compile the smart contract from the project root:
 ```bash
@@ -111,7 +135,7 @@ Field names in every response are chosen to match what `dashboard/api_client.py`
      -o src/main/resources/solidity.DocumentRegistry \
      contracts/DocumentRegistry.sol
 ```
-   The generated ABI and bytecode files should be available as:
+The generated ABI and bytecode files should be available as:
 ```text
    src/main/resources/solidity.DocumentRegistry/DocumentRegistry.abi
    src/main/resources/solidity.DocumentRegistry/DocumentRegistry.bin
@@ -129,13 +153,13 @@ Field names in every response are chosen to match what `dashboard/api_client.py`
 ```properties
    blockchain.contract-address=0x...
 ```
-   Then restart Spring Boot so subsequent uploads and verification calls use the deployed contract.
+Then restart Spring Boot so subsequent uploads and verification calls use the deployed contract.
 
 7. Create the database:
 ```bash
    createdb dms_db
 ```
-   or from inside `psql`:
+or from inside `psql`:
 ```sql
    CREATE DATABASE dms_db;
 ```
@@ -144,21 +168,30 @@ Field names in every response are chosen to match what `dashboard/api_client.py`
    cd spring-boot-service/src/main/resources
    cp application.properties.example application.properties
 ```
-   Then edit `application.properties` and set `spring.datasource.username` / `spring.datasource.password` to your local Postgres user.
+Then edit `application.properties` and set `spring.datasource.username` / `spring.datasource.password` to your local Postgres user.
 9. Build and run:
 ```bash
    cd spring-boot-service
    mvn clean install
    mvn spring-boot:run
 ```
-   Runs on `http://localhost:8080`.
+Runs on `http://localhost:8080`.
 
 10. Verify the blockchain-backed tamper detection:
-   - Upload a document through `POST /api/documents`
-   - Note the returned `documentId`
-   - Verify it through `GET /api/documents/{id}/verify`
-   - A matching file should return the successful integrity message
-   - To demonstrate tampering, modify the stored file after upload and run the same verification endpoint again. The recomputed hash will differ from the on-chain hash and the response will report that the file may have been altered
+- Upload a document through `POST /api/documents`
+- Note the returned `documentId`
+- Verify it through `GET /api/documents/{id}/verify`
+- A matching file should return the successful integrity message
+- To demonstrate tampering, modify the stored file after upload and run the same verification endpoint again. The recomputed hash will differ from the on-chain hash and the response will report that the file may have been altered
+
+11. Run the local watcher script for pre-upload tamper detection (optional, but needed to demo that layer):
+```bash
+   cd tools/local-watcher
+   pip install watchdog requests
+   mkdir -p ~/dms-intake
+   python watch.py ~/dms-intake
+```
+Drop a file into `~/dms-intake`, then upload that same file through the dashboard or API. If it was edited after being dropped in but before upload, the upload response includes a `preUploadWarning` and a `PRE_UPLOAD_TAMPER_DETECTED` audit log entry is recorded.
 
 ### 2. Django dashboard (reporting/oversight layer)
 
@@ -202,7 +235,7 @@ Then log in through the dashboard at `http://localhost:8000` with either account
 
 ## CRUD operations via curl
 
-Reading data (cases, documents, audit log) is easiest through the dashboard once you're logged in, that's what it's for. The commands below cover Create and Read, plus document integrity verification.
+Reading data (cases, documents, audit log) is easiest through the dashboard once you're logged in, that's what it's for. The commands below cover Create, Read, Update, Delete, and document integrity verification.
 
 ### Create
 
@@ -239,7 +272,32 @@ curl -u admin1:adminpass http://localhost:8080/api/audit-log
 curl -u officer1:officerpass http://localhost:8080/api/documents/1/verify
 ```
 
+### Update
 
+**Update a document's metadata** (case ID and/or document type only, not the file itself, owner or ADMIN):
+```bash
+curl -X PUT http://localhost:8080/api/documents/1 \
+  -u officer1:officerpass \
+  -H "Content-Type: application/json" \
+  -d '{"caseId":"CASE-002","documentType":"CHARGE_SHEET"}'
+```
+
+### Delete
+
+**Delete a document and its stored file** (owner or ADMIN, cannot be undone; the audit log entry survives independently, see the AuditLog model for why):
+```bash
+curl -X DELETE http://localhost:8080/api/documents/1 \
+  -u officer1:officerpass
+```
+
+### Pre-upload hash reporting
+
+This one isn't meant to be called by hand, it's what `tools/local-watcher/watch.py` calls automatically, shown here for completeness:
+```bash
+curl -X POST http://localhost:8080/api/documents/candidate-hash \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"test-report.txt","sha256Hash":"<sha256 hex digest>"}'
+```
 
 ## Known gaps, honestly listed
 
@@ -248,22 +306,27 @@ curl -u officer1:officerpass http://localhost:8080/api/documents/1/verify
 - No AI document analysis layer yet (deferred to after the presentation round)
 - The Django session stores the raw password for reuse as Basic Auth on later calls, acceptable for a localhost prototype, not something to carry into a real deployment
 - `POST /api/auth/login`'s "token" is a Basic Auth string, not a real bearer token, a deliberate simplification given the timeline
+- Pre-upload tamper detection only covers files that pass through the watched intake folder, a document uploaded from anywhere else has no candidate hash to compare against
+- `POST /api/documents/candidate-hash` is unauthenticated, acceptable for a local single-machine demo, not something to expose beyond the prototype as-is
 
 ## Implementation Tasks
 
 ### Spring Boot service
 - [x] Core entities, RBAC, document upload/retrieval, audit logging
 - [x] `/api/cases`, `/api/audit-log`, `/api/auth/login` to match the Django contract
-- [ ] Update and Delete endpoints for documents, with matching audit log entries
+- [x] Update and Delete endpoints for documents, with matching audit log entries
 - [x] On-chain (Ganache/Web3j) tamper-evidence and document hash verification layer
+- [x] Pre-upload tamper detection via local file watcher and candidate-hash comparison
 - [ ] Real `Case` entity if time allows
 
 ### Django service
 - [x] Case overview, case detail, document list, audit log pages, built against stub data
 - [x] Real login page, session-based auth, logout, per-session credentials used on every API call
 - [x] Graceful handling when an OFFICER session hits an ADMIN-only endpoint (restricted notice instead of a crash)
-- [ ] Switch to live Spring Boot data and verify all four pages render correctly
-- [ ] Upload form calling `POST /api/documents`
+- [x] Switch to live Spring Boot data and verify all four pages render correctly
+- [x] Upload form calling `POST /api/documents`
+- [x] Edit and delete document UI, matching the Spring Boot PUT/DELETE endpoints
+- [x] Pre-upload tamper warning surfaced on the upload page, distinct from the normal success message
 
 ### Later, after the presentation round
 - [ ] LLM-based document analysis (summarization, detail extraction)

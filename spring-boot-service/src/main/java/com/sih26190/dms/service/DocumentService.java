@@ -4,8 +4,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -18,9 +21,11 @@ import com.sih26190.dms.blockchain.BlockchainService;
 import com.sih26190.dms.dto.DocumentResponse;
 import com.sih26190.dms.dto.UpdateDocumentRequest;
 import com.sih26190.dms.dto.VerifyResponse;
+import com.sih26190.dms.model.CandidateHash;
 import com.sih26190.dms.model.DocumentRecord;
 import com.sih26190.dms.model.Role;
 import com.sih26190.dms.model.User;
+import com.sih26190.dms.repository.CandidateHashRepository;
 import com.sih26190.dms.repository.DocumentRecordRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -30,6 +35,7 @@ import lombok.RequiredArgsConstructor;
 public class DocumentService {
 
     private final DocumentRecordRepository documentRecordRepository;
+    private final CandidateHashRepository candidateHashRepository;
     private final AuditService auditService;
     private final BlockchainService blockchainService;
 
@@ -37,13 +43,13 @@ public class DocumentService {
     private String storageLocation;
 
     /**
-     * Saves the file to disk, saves the metadata row, writes an audit
-     * log entry, and anchors the file's hash on-chain via
-     * BlockchainService, all treated as one unit: if the blockchain
-     * call fails, the whole upload fails, rather than silently leaving
-     * a document with no tamper-evidence record. Given the transaction
-     * is @Transactional, a thrown exception here rolls back the DB
-     * writes too.
+
+     * Also checks CandidateHashRepository for an earlier, independent
+     * hash of a file with this same name, captured locally by the
+     * watcher script before this upload happened. A mismatch means the
+     * file was altered on the officer's machine between first being
+     * seen there and being uploaded, this is caught and flagged here,
+     * separate from the on-chain post-upload tamper check in verify().
      */
     @Transactional
     public DocumentResponse upload(MultipartFile file, String caseId, String documentType, User uploader) {
@@ -75,10 +81,61 @@ public class DocumentService {
                 throw new RuntimeException("Failed to anchor document hash on-chain, upload rolled back", e);
             }
 
-            return toResponse(saved);
+            String preUploadWarning = checkAgainstCandidateHash(file.getOriginalFilename(), fileBytes, saved, uploader);
+
+            return toResponse(saved, preUploadWarning);
         } catch (IOException e) {
             throw new RuntimeException("Failed to store uploaded file", e);
         }
+    }
+
+    /**
+     * Returns a warning message if a mismatch was found, null if it
+     * matched or no candidate record exists (e.g. the watcher was not
+     * running, or the file was never in the watched folder, in which
+     * case no claim either way can be made).
+     */
+    private String checkAgainstCandidateHash(String filename, byte[] uploadedBytes, DocumentRecord saved, User uploader) {
+        Optional<CandidateHash> candidate = candidateHashRepository.findFirstByFilenameOrderByCapturedAtAsc(filename);
+
+        if (candidate.isEmpty()) {
+            return null;
+        }
+
+        String uploadedHash = sha256Hex(uploadedBytes);
+        String candidateHash = candidate.get().getSha256Hash();
+
+        if (uploadedHash.equalsIgnoreCase(candidateHash)) {
+            return null;
+        }
+
+        auditService.log(uploader, saved, "PRE_UPLOAD_TAMPER_DETECTED");
+
+        return "This file's content differs from the version first observed locally at "
+                + candidate.get().getCapturedAt()
+                + ". It may have been modified after creation but before upload.";
+    }
+
+    private String sha256Hex(byte[] bytes) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(bytes);
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
+    }
+
+    public void recordCandidateHash(String filename, String sha256Hash) {
+        CandidateHash candidateHash = new CandidateHash();
+        candidateHash.setFilename(filename);
+        candidateHash.setSha256Hash(sha256Hash);
+        candidateHash.setCapturedAt(LocalDateTime.now());
+        candidateHashRepository.save(candidateHash);
     }
 
     /**
@@ -89,7 +146,7 @@ public class DocumentService {
                 ? documentRecordRepository.findAll()
                 : documentRecordRepository.findByUploadedBy(requester);
 
-        return records.stream().map(this::toResponse).toList();
+        return records.stream().map(d -> toResponse(d, null)).toList();
     }
 
     /**
@@ -105,7 +162,7 @@ public class DocumentService {
 
         auditService.log(requester, document, "VIEW");
 
-        return toResponse(document);
+        return toResponse(document, null);
     }
 
     /**
@@ -144,10 +201,7 @@ public class DocumentService {
         return new VerifyResponse(id, !matches, message);
     }
 
-    /**
-     * Updates metadata only (caseId, documentType), not the file itself.
-     * Same ownership rule as view/delete: owner or ADMIN. Logs UPDATE.
-     */
+
     @Transactional
     public DocumentResponse update(Long id, UpdateDocumentRequest request, User requester) {
         DocumentRecord document = documentRecordRepository.findById(id)
@@ -165,7 +219,7 @@ public class DocumentService {
         DocumentRecord saved = documentRecordRepository.save(document);
         auditService.log(requester, saved, "UPDATE");
 
-        return toResponse(saved);
+        return toResponse(saved, null);
     }
 
     /**
@@ -205,14 +259,15 @@ public class DocumentService {
         }
     }
 
-    private DocumentResponse toResponse(DocumentRecord document) {
+    private DocumentResponse toResponse(DocumentRecord document, String preUploadWarning) {
         return new DocumentResponse(
                 document.getId(),
                 document.getCaseId(),
                 document.getDocumentType(),
                 document.getOriginalFileName(),
                 document.getUploadedBy().getUsername(),
-                document.getUploadedAt()
+                document.getUploadedAt(),
+                preUploadWarning
         );
     }
 

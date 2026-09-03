@@ -195,8 +195,12 @@ def upload_document(request):
             error = "File, case ID, and document type are all required."
         else:
             try:
-                api_client.upload_document(uploaded_file, case_id, document_type, auth=auth)
-                messages.success(request, f"Uploaded '{uploaded_file.name}' to case {case_id}.")
+                result = api_client.upload_document(uploaded_file, case_id, document_type, auth=auth)
+                warning = result.get("preUploadWarning") if isinstance(result, dict) else None
+                if warning:
+                    messages.warning(request, f"Uploaded, but with a concern: {warning}")
+                else:
+                    messages.success(request, f"Uploaded '{uploaded_file.name}' to case {case_id}.")
                 return redirect("dashboard:document_list")
             except api_client.SpringBootAPIError:
                 error = "Could not reach the document service. Is Spring Boot running?"
