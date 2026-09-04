@@ -14,6 +14,7 @@ spring.jpa.properties.hibernate.format_sql=true
 
 # Local folder where uploaded documents are stored for the prototype
 dms.storage.location=./uploaded-documents
+dms.backup.location=./document-backups
 
 spring.servlet.multipart.max-file-size=20MB
 spring.servlet.multipart.max-request-size=20MB
