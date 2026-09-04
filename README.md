@@ -69,6 +69,19 @@ This implementation is a deliberate simplification of a distributed blockchain d
 
 **Important scope note:** the on-chain hash is computed from whatever bytes exist in the file at the moment of upload. `verify()` only detects changes made to the stored file *after* that point, it cannot detect a document that was already altered before it was uploaded. That earlier window is what the local watcher below is for.
 
+### Post-tamper recovery
+
+Detecting tampering on its own still leaves a corrupted or altered file sitting in storage until someone manually intervenes. The prototype now closes that gap for the one case it can act on with confidence: a mismatch caught by `verify()` against the on-chain hash.
+
+How it works:
+
+- At upload time, alongside writing the file to normal storage, Spring Boot also writes an identical copy to a separate backup location, this copy is made in the same request that anchors the file's hash on-chain, so it is guaranteed to correspond to that trusted hash
+- When `GET /api/documents/{id}/verify` finds a mismatch between the current file and the on-chain record, it no longer just reports the tamper, it immediately overwrites the live file with the backup copy, restoring it to the exact bytes that were anchored on-chain at upload
+- The restore is logged as its own `AUTO_RESTORED` audit entry, separate from the `VERIFY` entry that is always logged regardless of outcome, so the audit trail shows both that tampering was detected and that a restore followed it
+- The verify response now also carries a `restored` flag, the Django dashboard uses this to show a distinct amber warning notice ("...has been restored to its last known-good version") rather than lumping a recovered document in with a plain success or plain error message
+
+**Important scope note:** this is a single known-good backup taken once at upload time, not real version history. There is exactly one prior version to fall back to, so "most recent known-good version" and "the original upload" are currently the same thing. If the backup copy itself is missing or unreadable, `verify()` reports the tamper as usual with `restored: false` and an explicit "no backup was available" message, it does not fail silently. A real multi-version rollback system, and protecting the backup from someone with the same database/filesystem-level access that could tamper with the live file in the first place, remain future work rather than something this prototype claims to solve.
+
 ## Pre-upload tamper detection (local file watcher)
 
 The on-chain layer above only protects a document from the moment it is uploaded onward. It has no way to know whether the file was already altered before the officer clicked upload, since the hash it anchors is computed at upload time, whatever content exists then is treated as the trusted original. A prototype standalone watcher script closes that earlier gap.
