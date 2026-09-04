@@ -41,7 +41,8 @@ public class DocumentService {
 
     @Value("${dms.storage.location}")
     private String storageLocation;
-
+    @Value("${dms.backup.location}")
+    private String backupLocation;
     /**
 
      * Also checks CandidateHashRepository for an earlier, independent
@@ -63,10 +64,18 @@ public class DocumentService {
             Path destination = directory.resolve(storedFileName);
             Files.write(destination, fileBytes);
 
+// NEW — keep a known-good backup copy at upload time
+            Path backupDir = Paths.get(backupLocation);
+            Files.createDirectories(backupDir);
+            Path backupDestination = backupDir.resolve(storedFileName);
+
+            Files.write(backupDestination, fileBytes);
+
             DocumentRecord document = new DocumentRecord();
             document.setCaseId(caseId);
             document.setDocumentType(documentType);
             document.setFilePath(destination.toString());
+            document.setBackupFilePath(backupDestination.toString());  // NEW
             document.setOriginalFileName(file.getOriginalFilename());
             document.setUploadedBy(uploader);
             document.setUploadedAt(LocalDateTime.now());
@@ -192,13 +201,31 @@ public class DocumentService {
             throw new RuntimeException("Could not reach the blockchain to verify this document", e);
         }
 
+        boolean restored = false;
+        String message;
+
+        if (matches) {
+            message = "File matches the hash recorded on-chain at upload time.";
+        } else if (document.getBackupFilePath() != null) {
+            try {
+                Files.copy(
+                        Paths.get(document.getBackupFilePath()),
+                        Paths.get(document.getFilePath()),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                );
+                restored = true;
+                auditService.log(requester, document, "AUTO_RESTORED");
+                message = "File did NOT match the on-chain record and has been restored to its last known-good version.";
+            } catch (IOException e) {
+                message = "File does NOT match the on-chain record, it may have been altered since upload. Restore from backup also failed.";
+            }
+        } else {
+            message = "File does NOT match the on-chain record, it may have been altered since upload. No backup was available to restore from.";
+        }
+
         auditService.log(requester, document, "VERIFY");
 
-        String message = matches
-                ? "File matches the hash recorded on-chain at upload time."
-                : "File does NOT match the on-chain record, it may have been altered since upload.";
-
-        return new VerifyResponse(id, !matches, message);
+        return new VerifyResponse(id, !matches, restored, message);
     }
 
 

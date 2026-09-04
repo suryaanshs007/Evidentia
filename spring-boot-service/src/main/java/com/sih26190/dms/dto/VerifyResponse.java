@@ -8,5 +8,6 @@ import lombok.Getter;
 public class VerifyResponse {
     private Long documentId;
     private boolean tampered;
+    private boolean restored;
     private String message;
 }

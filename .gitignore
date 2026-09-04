@@ -36,7 +36,9 @@ django-service/**/__pycache__/
 django-service/**/*.pyc
 
 
-uploaded-documents/
+
+spring-boot-service/uploaded-documents
+spring-boot-service/document-backups
 
 
 spring-boot-service/src/main/resources/application.properties

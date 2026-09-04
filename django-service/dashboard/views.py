@@ -283,7 +283,9 @@ def verify_document(request, document_id):
 
     try:
         result = api_client.verify_document(document_id, auth=auth)
-        if result.get("tampered"):
+        if result.get("restored"):
+            messages.warning(request, f"Document {document_id}: {result.get('message')}")
+        elif result.get("tampered"):
             messages.error(request, f"Document {document_id}: {result.get('message')}")
         else:
             messages.success(request, f"Document {document_id}: {result.get('message')}")

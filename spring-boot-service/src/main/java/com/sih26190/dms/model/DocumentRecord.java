@@ -31,7 +31,7 @@ public class DocumentRecord {
     private String documentType;
 
     private String filePath;
-
+    private String backupFilePath;
     private String originalFileName;
 
     @ManyToOne

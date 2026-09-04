@@ -350,10 +350,9 @@ def verify_document(document_id, auth=None):
     no real blockchain behind stub data.
     """
     if USE_STUB:
-        return {"documentId": document_id, "tampered": False, "message": "Stub mode: no real verification performed."}
+        return {"documentId": document_id, "tampered": False, "restored": False, "message": "Stub mode: no real verification performed."}
 
     return _get(f"/api/documents/{document_id}/verify", auth=auth)
-
 
 def delete_document(document_id, auth=None):
     """Delete a document. In stub mode, removes it from the in-memory list."""
